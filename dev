@@ -1,0 +1,9 @@
+#!/bin/bash
+
+while read path event file; do
+  echo -e "\e[41m$path $event $file\e[49m"
+  killall signaler-exe >&1
+
+  echo -e "\e[103m\e[30mStarting Build\e[49m\e[39m"
+  (cabal build && echo -e "\e[39m" && (echo -e "\e[42m\e[30mRunning\e[49m\e[39m" && cabal run)) >&1 &
+done < <(cat <(echo "first build") <(inotifywait -qrme close_write **/*.hs))
