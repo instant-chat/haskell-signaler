@@ -40,13 +40,12 @@ handleWS connections pending = do
     id <- newEmptyMVar
     partner <- newEmptyMVar
 
-    putStrLn "listening"
     registerMessage <- receiveDataMessage connection
     register registerMessage id connection
 
     let loop = do
           message <- receiveDataMessage connection
-          putStrLn "message"
+          print "Message received"
           processMessage message id partner connection
           loop
     loop
@@ -58,38 +57,33 @@ handleWS connections pending = do
       register (Binary message) id connection = do
         putMVar id message
         insert message connection connections
-        putStrLn ("Registering" ++ (prettyID message))
+        print ("Registering" ++ (prettyID message))
 
       processMessage (Text message) id partner connection = do
-        putStrLn ("Text Message: " ++ (show message))
+        print ("Text Message: " ++ (show message))
 
         partnerString <- readMVar partner
+
         print ("To" ++ (prettyID partnerString))
 
         partnerConnection <- lookup partnerString connections
 
         case partnerConnection of
           Just partnerConnection -> sendTextData partnerConnection message
-          Nothing -> print "No partner"
+          Nothing -> print "No partner" -- should search larger network in this case
 
       processMessage (Binary message) id partner connection = do
-        putStrLn ("Binary Message (length): " ++ show (length message))
+        print ("Binary Message (length): " ++ show (length message))
         putMVar partner message
         idString <- readMVar id
-        putStrLn ((prettyID idString) ++ " selected " ++ (prettyID message))
+        print ((prettyID idString) ++ " selected " ++ (prettyID message))
 
       prettyID = show . unpack
-
-      transmitMessage (Just partnerConnection) (Text message) = do
-        print "msg"
-
-      transmitMessage Nothing (Text message) = do
-        print "no partner"
 
 
 start :: IO ()
 start = do
-    putStrLn "Starting"
+    print "Starting"
 
     hSetBuffering stdin NoBuffering
 
@@ -102,8 +96,8 @@ start = do
     runSettings (
       ( setOnOpen (openHandler connectionCount)
       . setOnClose (closeHandler connectionCount)
-      . setOnException (\_ e -> putStrLn ("Exception: " ++ show e))
-      . setBeforeMainLoop (putStrLn "Listening on port 8080")
+      . setOnException (\_ e -> print ("Exception: " ++ show e))
+      . setBeforeMainLoop (print "Listening on port 8080")
       . setLogger logger
       . setTimeout 60
       . setPort 8080) defaultSettings)
@@ -127,4 +121,4 @@ start = do
           print count
 
         logger request status fileSize = do
-          putStrLn ("does nothing" ++ (show status))
+          print ("does nothing" ++ (show status))
