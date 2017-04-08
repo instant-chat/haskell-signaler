@@ -39,55 +39,58 @@ handleWS connections pending = do
 
     forkPingThread connection 55
 
-    id <- newEmptyMVar
-    partner <- newEmptyMVar
-
-    registerMessage <- receiveDataMessage connection
-    register registerMessage id connection
-
-    let loop = do
-          message <- receiveDataMessage connection
-          print "Message received"
-          processMessage message id partner connection
-          loop
-    loop
-
-    idString <- takeMVar id
-    delete idString connections
+    handle connection
 
     where
-      register (Binary message) id connection = do
-        putMVar id message
-        insert message connection connections
-        print ("Registering" ++ (prettyID message))
+      handle connection = do
 
-      processMessage (Text message) id partner connection = do
-        print ("Text Message: " ++ (show message))
+        id <- newEmptyMVar
+        partner <- newEmptyMVar
 
-        partnerString <- readMVar partner
+        idMessage <- receiveDataMessage connection
+        register idMessage connection id
 
-        print ("To" ++ (prettyID partnerString))
+        let loop = do
+              message <- receiveDataMessage connection
+              print "Message received"
+              processMessage message connection id partner
+              loop
+        loop
 
-        partnerConnection <- lookup partnerString connections
+        idString <- takeMVar id
+        delete idString connections
 
-        case partnerConnection of
-          Just partnerConnection -> sendTextData partnerConnection message
-          Nothing -> print "No partner" -- should search larger network in this case
+        where
+          register (Binary message) connection id = do
+            putMVar id message
+            insert message connection connections
+            print ("Registering" ++ (prettyID message))
 
-      processMessage (Binary message) id partner connection = do
-        print ("Binary Message (length): " ++ show (length message))
-        putMVar partner message
-        idString <- readMVar id
-        print ((prettyID idString) ++ " selected " ++ (prettyID message))
+          processMessage (Text message) connection id partner = do
+            print ("Text Message: " ++ (show message))
 
-      prettyID = show . unpack
+            partnerString <- readMVar partner
+
+            print ("To" ++ (prettyID partnerString))
+
+            partnerConnection <- lookup partnerString connections
+
+            case partnerConnection of
+              Just partnerConnection -> sendTextData partnerConnection message
+              Nothing -> print "No partner" -- should search larger network in this case
+
+          processMessage (Binary message) connection id partner = do
+            print ("Binary Message (length): " ++ show (length message))
+            putMVar partner message
+            idString <- readMVar id
+            print ((prettyID idString) ++ " selected " ++ (prettyID message))
+
+          prettyID = show . unpack
 
 
 start :: IO ()
 start = do
     print "Starting"
-
-    hSetBuffering stdin NoBuffering
 
     connections <- empty
 
@@ -123,4 +126,4 @@ start = do
           print count
 
         logger request status fileSize = do
-          print ("does nothing" ++ (show status))
+          print ("Logger: " ++ (show status) ++ (show fileSize))
