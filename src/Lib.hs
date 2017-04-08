@@ -24,7 +24,7 @@ import Data.Text (Text)
 import Numeric (showHex)
 import Network.Wai.Handler.Warp (run, runSettings, setBeforeMainLoop, setLogger, setOnException, setOnClose, setOnOpen, setPort, setTimeout, defaultSettings)
 import Network.Wai.Handler.WebSockets as WaiWS
-import Network.WebSockets (acceptRequest, receiveData, receiveDataMessage, fromLazyByteString, send, sendTextData, PendingConnection, defaultConnectionOptions, DataMessage(..))
+import Network.WebSockets (acceptRequest, forkPingThread, receiveData, receiveDataMessage, fromLazyByteString, send, sendTextData, PendingConnection, defaultConnectionOptions, DataMessage(..))
 import Network.WebSockets.Connection (Connection)
 
 import System.IO (hSetBuffering, isEOF, stdin, BufferMode( NoBuffering ))
@@ -36,6 +36,8 @@ import System.IO (hSetBuffering, isEOF, stdin, BufferMode( NoBuffering ))
 handleWS :: Map ByteString Connection -> PendingConnection -> IO ()
 handleWS connections pending = do
     connection <- acceptRequest pending
+
+    forkPingThread connection 55
 
     id <- newEmptyMVar
     partner <- newEmptyMVar
