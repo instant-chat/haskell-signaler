@@ -8,7 +8,7 @@ module Lib
 
 import Prelude hiding (getContents, hGet, interact, scanl, foldl, concat, putStr, length, lookup)
 
-import Control.Concurrent (forkIO, newEmptyMVar, newMVar, putMVar, readMVar, takeMVar, MVar)
+import Control.Concurrent (forkIO, newEmptyMVar, newMVar, putMVar, readMVar, swapMVar, takeMVar, tryReadMVar, MVar)
 import Control.Concurrent.Chan.Unagi (InChan, getChanContents, newChan, readChan, dupChan, writeChan, writeList2Chan)
 import Control.Concurrent.Map (delete, empty, insert, lookup, Map)
 import Control.Concurrent.Timer (repeatedTimer)
@@ -24,7 +24,7 @@ import Data.Text (Text)
 import Numeric (showHex)
 import Network.Wai.Handler.Warp (run, runSettings, setBeforeMainLoop, setLogger, setOnException, setOnClose, setOnOpen, setPort, setTimeout, defaultSettings)
 import Network.Wai.Handler.WebSockets as WaiWS
-import Network.WebSockets (acceptRequest, forkPingThread, receiveData, receiveDataMessage, fromLazyByteString, send, sendTextData, PendingConnection, defaultConnectionOptions, DataMessage(..))
+import Network.WebSockets (acceptRequest, forkPingThread, receiveData, receiveDataMessage, fromLazyByteString, send, sendBinaryData, sendTextData, PendingConnection, defaultConnectionOptions, DataMessage(..))
 import Network.WebSockets.Connection (Connection)
 
 import System.IO (hSetBuffering, isEOF, stdin, BufferMode( NoBuffering ))
@@ -51,6 +51,8 @@ handleWS connections pending = do
         register idMessage connection id
 
         let loop = do
+              idString <- readMVar id
+              print ("Waiting for message" ++ (prettyID idString))
               message <- receiveDataMessage connection
               print "Message received"
               processMessage message connection id partner
@@ -69,21 +71,40 @@ handleWS connections pending = do
           processMessage (Text message) connection id partner = do
             print ("Text Message: " ++ (show message))
 
-            partnerString <- readMVar partner
+            partnerString <- tryReadMVar partner
 
-            print ("To" ++ (prettyID partnerString))
+            case partnerString of
+              Just partnerID -> do
+                print ("To" ++ (prettyID partnerID))
 
-            partnerConnection <- lookup partnerString connections
+                partnerConnection <- lookup partnerID connections
 
-            case partnerConnection of
-              Just partnerConnection -> sendTextData partnerConnection message
-              Nothing -> print "No partner" -- should search larger network in this case
+                print "got partner connection"
+
+                case partnerConnection of
+                  Just partnerConnection -> do
+                    idString <- tryReadMVar id
+                    case idString of
+                      Just theId -> do
+                        sendBinaryData partnerConnection theId
+                        sendTextData partnerConnection message
+                      Nothing -> print "lost id"
+                  Nothing -> print "No partner" -- should search larger network in this case
+              Nothing -> print "No partner"
 
           processMessage (Binary message) connection id partner = do
             print ("Binary Message (length): " ++ show (length message))
-            putMVar partner message
-            idString <- readMVar id
-            print ((prettyID idString) ++ " selected " ++ (prettyID message))
+            partnerString <- tryReadMVar partner
+            case partnerString of
+              Just _ -> do
+                swapMVar partner message
+                idString <- tryReadMVar id
+                case idString of
+                  Just theId -> do
+                    print ((prettyID theId) ++ " selected " ++ (prettyID message))
+                  Nothing -> print "Lost id"
+              Nothing -> do
+                putMVar partner message
 
           prettyID = show . unpack
 
@@ -96,7 +117,7 @@ start = do
 
     connectionCount <- newMVar 0
 
-    repeatedTimer (printStats connectionCount connections) (msDelay 5000)
+    repeatedTimer (printStats connectionCount connections) (msDelay 15000)
 
     runSettings (
       ( setOnOpen (openHandler connectionCount)
@@ -126,4 +147,4 @@ start = do
           print count
 
         logger request status fileSize = do
-          print ("Logger: " ++ (show status) ++ (show fileSize))
+          print ("Logger: " ++ (show request) ++ " " ++ (show status) ++ " " ++ (show fileSize))
